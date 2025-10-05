@@ -188,7 +188,10 @@ class WindowManipulationObservers {
                 WindowUtil.updateWindowDateTime(element: element, app: app)
             }
             handleWindowEvent(element: element, app: app)
-        case kAXUIElementDestroyedNotification, kAXWindowResizedNotification, kAXWindowMovedNotification:
+        case kAXWindowMovedNotification:
+            WindowUtil.windowMoved(element: element, app: app)
+            handleWindowEvent(element: element, app: app)
+        case kAXUIElementDestroyedNotification, kAXWindowResizedNotification:
             handleWindowEvent(element: element, app: app)
         case kAXWindowMiniaturizedNotification:
             handleWindowEvent(element: element, app: app)

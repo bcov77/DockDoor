@@ -17,6 +17,7 @@ class SettingsWindowControllerDelegate: NSObject, NSWindowDelegate {
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var dockObserver: DockObserver?
     private var appClosureObserver: WindowManipulationObservers?
+    private var gestureObserver: GestureObserver?
     private var windowSeeder: WindowSeeder?
     private var previewCoordinator: SharedPreviewWindowCoordinator?
     private var keybindHelper: KeybindHelper?
@@ -83,6 +84,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if Defaults[.enableDockPreviews] {
                 let dockObs = DockObserver(previewCoordinator: currentPreviewCoordinator)
                 dockObserver = dockObs
+            }
+
+            if Defaults[.enableTrackpadGestures] {
+                gestureObserver = GestureObserver()
             }
 
             appClosureObserver = WindowManipulationObservers(previewCoordinator: currentPreviewCoordinator)

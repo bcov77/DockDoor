@@ -67,7 +67,8 @@ extension Defaults.Keys {
     static let Int64maskAlternate = Key<Int>("Int64maskAlternate", default: 524_576)
     static let UserKeybind = Key<UserKeyBind>("UserKeybind", default: UserKeyBind(keyCode: 48, modifierFlags: Defaults[.Int64maskAlternate]))
 
-    static let enableSwipeListener = Key<Bool>("enableSwipeListener", default: true)
+    static let enableTrackpadGestures = Key<Bool>("enableTrackpadGestures", default: false)
+    static let enableTitleSwipes = Key<Bool>("enableTitleSwipes", default: false)
 
     static let showAppName = Key<Bool>("showAppName", default: true)
     static let appNameStyle = Key<AppNameStyle>("appNameStyle", default: .default)

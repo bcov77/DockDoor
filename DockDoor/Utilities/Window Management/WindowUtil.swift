@@ -34,6 +34,8 @@ struct WindowInfo: Identifiable, Hashable {
     var spaceID: Int?
     var lastAccessedTime: Date
     var lastImageCaptureTime: Date
+    var restorePosition: CGPoint?
+    var restoreSize: CGSize?
 
     private var _scWindow: SCWindow?
 
@@ -81,6 +83,16 @@ enum WindowAction: String, Hashable, CaseIterable, Defaults.Serializable {
     case openNewWindow
 }
 
+enum WindowPaneAction {
+    case none
+    case maximize
+    case restore
+    case halfTop
+    case halfLeft
+    case halfRight
+    case halfBottom
+}
+
 enum WindowUtil {
     private static let desktopSpaceWindowCacheManager = SpaceWindowCacheManager()
 
@@ -88,6 +100,11 @@ enum WindowUtil {
     private static var explicitTimestampUpdates: [AXUIElement: Date] = [:]
     private static let explicitUpdateLock = NSLock()
     private static let explicitUpdateTimeWindow: TimeInterval = 1.5
+
+    // Track windows explicitly updated by bringWindowToFront to prevent observer duplication
+    private static var windowResizeUpdates: [AXUIElement: Date] = [:]
+    private static let windowResizeUpdateLock = NSLock()
+    private static let windowResizeUpdateTimeWindow: TimeInterval = 0.2
 
     static func clearWindowCache(for app: NSRunningApplication) {
         desktopSpaceWindowCacheManager.writeCache(pid: app.processIdentifier, windowSet: [])
@@ -964,6 +981,124 @@ enum WindowUtil {
     private static func cleanupExpiredExplicitUpdates(currentTime: Date) {
         explicitTimestampUpdates = explicitTimestampUpdates.filter { _, date in
             currentTime.timeIntervalSince(date) < explicitUpdateTimeWindow
+        }
+    }
+
+    static func getWindowByID(id: Int) -> WindowInfo? {
+        desktopSpaceWindowCacheManager.getAllWindows().first(where: { $0.id == id })
+    }
+
+    static func performWindowPaneAction(window: WindowInfo, action: WindowPaneAction, screen: NSScreen) {
+        guard action != .none else { return }
+
+        let (screenTopLeft, screenSize) = DockObserver.getScreenUsableBounds(screen: screen)
+
+        var newPosition: CGPoint?
+        var newSize: CGSize?
+
+        switch action {
+        case .maximize:
+            newPosition = screenTopLeft
+            newSize = screenSize
+        case .restore:
+            newPosition = window.restorePosition
+            newSize = window.restoreSize
+        case .halfLeft:
+            newPosition = screenTopLeft
+            newSize = CGSize(width: screenSize.width / 2, height: screenSize.height)
+        case .halfRight:
+            newPosition = CGPoint(x: screenTopLeft.x + screenSize.width / 2, y: screenTopLeft.y)
+            newSize = CGSize(width: screenSize.width / 2, height: screenSize.height)
+        case .halfBottom:
+            newPosition = CGPoint(x: screenTopLeft.x, y: screenTopLeft.y + screenSize.height / 2)
+            newSize = CGSize(width: screenSize.width, height: screenSize.height / 2)
+        case .halfTop:
+            newPosition = screenTopLeft
+            newSize = CGSize(width: screenSize.width, height: screenSize.height / 2)
+        default:
+            return
+        }
+
+        windowResizeUpdateLock.lock()
+        windowResizeUpdates[window.axElement] = Date.now
+        windowResizeUpdateLock.unlock()
+
+        performWindowResize(window: window, position: newPosition, size: newSize, isRestore: action == .restore)
+    }
+
+    // If you call this function, you should first set windowResizeUpdates
+    static func performWindowResize(window: WindowInfo, position: CGPoint?, size: CGSize?, isRestore: Bool) {
+        var newWindow = window
+
+        // If we aren't restoring. We want to save the window coordinates
+        //  Unless the user paned a window twice in a row in which case we use the original coordinates
+        if !isRestore {
+            newWindow.restorePosition = window.restorePosition ?? (try? window.axElement.position())
+            newWindow.restoreSize = window.restoreSize ?? (try? window.axElement.size())
+        } else {
+            // In a restore we store nil so you can't restore twice
+            newWindow.restorePosition = nil
+            newWindow.restoreSize = nil
+        }
+
+        // Resize it twice. There seems to a bug where if your size/position is way off-screen
+        //  it doesn't respect the resize
+        if let size, let sizeValue = AXValue.from(size: size) {
+            try? window.axElement.setAttribute(kAXSizeAttribute, sizeValue)
+        }
+        if let position, let positionValue = AXValue.from(point: position) {
+            try? window.axElement.setAttribute(kAXPositionAttribute, positionValue)
+        }
+        if let size, let sizeValue = AXValue.from(size: size) {
+            try? window.axElement.setAttribute(kAXSizeAttribute, sizeValue)
+        }
+
+        // Update only the restorePosition and restoreSize in the cache
+        desktopSpaceWindowCacheManager.updateCache(pid: window.app.processIdentifier) { windowSet in
+            if let index = windowSet.firstIndex(where: { $0.axElement == window.axElement }) {
+                var updatedWindow = windowSet[index]
+                updatedWindow.restorePosition = newWindow.restorePosition
+                updatedWindow.restoreSize = newWindow.restoreSize
+                windowSet.remove(at: index)
+                windowSet.insert(updatedWindow)
+            }
+        }
+    }
+
+    // If you drag a window that has been paned. It's size is restored and its position is centered under the mouse
+    static func windowMoved(element: AXUIElement, app: NSRunningApplication) {
+        guard let windowInfo = desktopSpaceWindowCacheManager.readCache(pid: app.processIdentifier).first(where: { $0.axElement == element }) else { return }
+
+        guard windowInfo.restorePosition != nil || windowInfo.restoreSize != nil else { return }
+
+        windowResizeUpdateLock.lock()
+        defer { windowResizeUpdateLock.unlock() }
+
+        // Check if this window was recently updated by us
+        let now = Date()
+        if let lastWindowResizeUpdate = windowResizeUpdates[element],
+           now.timeIntervalSince(lastWindowResizeUpdate) < windowResizeUpdateTimeWindow
+        {
+            // Clean up expired entries while we're here
+            cleanupExpiredWindowResizeUpdates(currentTime: now)
+            return // if we ended up here then we caused the window to move
+        }
+
+        var newPosition: CGPoint?
+        if let newSize = windowInfo.restoreSize {
+            let mousePosition = DockObserver.getMousePosition()
+            let offsetIntoTitle = 10.0
+
+            newPosition = CGPoint(x: mousePosition.x - newSize.width / 2, y: mousePosition.y - offsetIntoTitle)
+        }
+
+        performWindowResize(window: windowInfo, position: newPosition, size: windowInfo.restoreSize, isRestore: true)
+    }
+
+    /// Removes expired entries from resize tracking (must be called with lock held)
+    private static func cleanupExpiredWindowResizeUpdates(currentTime: Date) {
+        windowResizeUpdates = windowResizeUpdates.filter { _, date in
+            currentTime.timeIntervalSince(date) < windowResizeUpdateTimeWindow
         }
     }
 }

@@ -501,6 +501,25 @@ final class DockObserver {
         return CGPoint(x: point.x, y: menuScreenHeight - point.y + offsetTop)
     }
 
+    // Gets the top-left corner for windows and the maximum size they can be
+    static func getScreenUsableBounds(screen: NSScreen) -> (CGPoint, CGSize) {
+        // 1) Use visibleFrame so we don't overlap the menu bar / Dock.
+        let visible = screen.visibleFrame
+
+        // 2) Compute the top-left point in AppKit (bottom-left origin):
+        let topLeftCocoa = CGPoint(x: visible.origin.x, y: visible.origin.y + visible.size.height)
+
+        // 3) Convert to CoreGraphics/AX coordinates (top-left origin for the main display).
+        //    CoreGraphics global space origin is the top-left of the main display:
+        let mainBounds = CGDisplayBounds(CGMainDisplayID()) // global CG coords
+        let axTopLeft = CGPoint(x: topLeftCocoa.x, y: mainBounds.height - topLeftCocoa.y)
+
+        // 4) Size stays the same (width/height).
+        let axSize = CGSize(width: visible.width, height: visible.height)
+
+        return (axTopLeft, axSize)
+    }
+
     // Enable dock click detection
     func enableDockClickDetection() {
         setupEventTap()

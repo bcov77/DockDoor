@@ -95,6 +95,8 @@ struct MainSettingsView: View {
     @Default(.useClassicWindowOrdering) var useClassicWindowOrdering
     @Default(.limitSwitcherToFrontmostApp) var limitSwitcherToFrontmostApp
     @Default(.fullscreenAppBlacklist) var fullscreenAppBlacklist
+    @Default(.enableTrackpadGestures) var enableTrackpadGestures
+    @Default(.enableTitleSwipes) var enableTitleSwipes
 
     @State private var selectedPerformanceProfile: SettingsProfile = .default
     @State private var selectedPreviewQualityProfile: PreviewQualityProfile = .standard
@@ -445,6 +447,30 @@ struct MainSettingsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.leading, 20)
+                }
+                Divider()
+
+                VStack(alignment: .leading) {
+                    Toggle(isOn: $enableTrackpadGestures) { Text("Enable Trackpad Gestures") }
+                        .onChange(of: enableTrackpadGestures) { _ in askUserToRestartApplication() }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Enable various trackpad related gestures")
+                        Text("Currently supports easier window paning")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 20)
+                }
+                if enableTrackpadGestures {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle(isOn: $enableTitleSwipes) { Text("Two finger swipe on titles to pane them") }
+                        Text("Up/Down to maximize/restore. Option + direction to pane in that direction.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.leading, 20)
+                    }
+                    .padding(.leading, 20)
+                    .padding(.top, 4)
                 }
 
                 HStack {
@@ -843,6 +869,8 @@ struct MainSettingsView: View {
                 useClassicWindowOrdering = Defaults.Keys.useClassicWindowOrdering.defaultValue
                 limitSwitcherToFrontmostApp = Defaults.Keys.limitSwitcherToFrontmostApp.defaultValue
                 fullscreenAppBlacklist = Defaults.Keys.fullscreenAppBlacklist.defaultValue
+                enableTrackpadGestures = Defaults.Keys.enableTrackpadGestures.defaultValue
+                enableTitleSwipes = Defaults.Keys.enableTitleSwipes.defaultValue
 
                 Defaults[.UserKeybind] = Defaults.Keys.UserKeybind.defaultValue
                 keybindModel.currentKeybind = Defaults[.UserKeybind]
