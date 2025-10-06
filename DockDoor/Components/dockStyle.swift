@@ -12,8 +12,12 @@ struct DockStyleModifier: ViewModifier {
         content
             .background {
                 ZStack {
-                    BlurView(variant: variant, frostedTranslucentLayer: frostedTranslucentLayer)
-                        .opacity(backgroundOpacity)
+                    if backgroundOpacity < 1 {
+                        BlurView(variant: variant, frostedTranslucentLayer: frostedTranslucentLayer)
+                            .opacity(backgroundOpacity)
+                    } else {
+                        Rectangle().fill(.ultraThinMaterial).background(Color.gray)
+                    }
                     if let hc = highlightColor {
                         FluidGradient(blobs: hc.generateShades(count: 3), highlights: hc.generateShades(count: 3), speed: 0.5, blur: 0.75)
                             .opacity(0.2 * backgroundOpacity)
